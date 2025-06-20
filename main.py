@@ -8,9 +8,8 @@ import joblib
 import pandas as pd
 
 # Modelni yuklash
-model = joblib.load("  model.pkl")
+model = joblib.load("C:/Users/user/Desktop/modullar/Mustaqil/model.pkl")
 
-# Model uchun kerakli ustunlar
 FIELDS = [
     'SeniorCitizen', 'tenure', 'MonthlyCharges', 'TotalCharges',
     'InternetService_Fiber optic', 'PaymentMethod_Electronic check',
@@ -18,7 +17,6 @@ FIELDS = [
     'PaperlessBilling_Yes', 'TechSupport_Yes'
 ]
 
-# Har bir savolga mos xabar
 QUESTIONS = [
     "1/11 - Siz keksa mijozmisiz? (0 - Yo‘q, 1 - Ha):",
     "2/11 - Xizmatdan foydalanish muddati (oylarda):",
@@ -33,80 +31,71 @@ QUESTIONS = [
     "11/11 - Texnik yordam xizmati mavjudmi? (0 - Yo‘q, 1 - Ha):"
 ]
 
-# /start komandasi
+# Bosqichlar uchun integer qiymatlar
+STEPS = list(range(len(FIELDS)))  # 0..10
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Salom! Mijoz ketishini bashorat qiluvchi bot.\n"
-        "Bashoratni boshlash uchun /predict deb yozing."
+        "Salom! /predict deb yozing va mijoz ketishini bashorat qilamiz."
     )
 
-# /predict komandasi
 async def predict(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(QUESTIONS[0])
-    return 0
+    return STEPS[0]
 
-# Har bir foydalanuvchi javobini qayta ishlash
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = len(context.user_data)
     field = FIELDS[step]
-    user_input = update.message.text.strip()
-
+    text = update.message.text.strip()
     try:
-        context.user_data[field] = float(user_input)
+        context.user_data[field] = float(text)
     except ValueError:
-        await update.message.reply_text("Iltimos, faqat sonli qiymat kiriting (masalan: 0 yoki 1, yoki narx).")
-        return step
+        await update.message.reply_text("Iltimos, faqat son kiriting.")
+        return STEPS[step]
 
-    if step + 1 < len(FIELDS):
+    if step < len(FIELDS) - 1:
         await update.message.reply_text(QUESTIONS[step + 1])
-        return step + 1
+        return STEPS[step + 1]
     else:
         try:
-            df_input = pd.DataFrame([context.user_data])
+            df = pd.DataFrame([context.user_data])
 
-            # Har bir model kutayotgan ustun uchun yo'q bo'lsa - 0 qiymat berish
+            # ⚙️ Etishmayotgan ustunlarni 0 bilan to‘liqlash
             for col in model.feature_names_in_:
-                if col not in df_input.columns:
-                    df_input[col] = 0
+                if col not in df.columns:
+                    df[col] = 0
 
-            # Model ustun tartibiga moslashtirish
-            df_input = df_input[model.feature_names_in_]
+            df = df[model.feature_names_in_]
 
-            # Bashorat
-            prob = model.predict_proba(df_input)[0][1]
-            result = "\u2709\ufe0f Mijoz ehtimol ketadi" if prob >= 0.5 else "\u2705 Mijoz ehtimol qoladi"
-            await update.message.reply_text(f"{result}.\nEhtimollik: {prob:.2%}")
-
+            prob = model.predict_proba(df)[0][1]
+            result = "📩 Mijoz ketishi mumkin" if prob >= 0 else "✅ Mijoz qolishi mumkin"
+            await update.message.reply_text(f"{result}\nEhtimollik: {prob:.2%}")
         except Exception as e:
-            await update.message.reply_text("\u274c Xatolik yuz berdi. Ma'lumotlar noto‘g‘ri bo‘lishi mumkin.")
             print("Model xatosi:", e)
-
+            await update.message.reply_text("❌ Xatolik yuz berdi.")
         return ConversationHandler.END
 
-# /cancel komandasi
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Jarayon bekor qilindi.")
     return ConversationHandler.END
 
-# BOT TOKEN (BotFather'dan olingan tokenni bu yerga joylashtiring)
-TOKEN = "7901268818:AAHth_XXTnVrDR-JFp5C_uoq7z6F8zzpytA"
+def main():
+    app = ApplicationBuilder().token("7901268818:AAHth_XXTnVrDR-JFp5C_uoq7z6F8zzpytA").build()
 
-# Bot ilovasini yaratish
-app = ApplicationBuilder().token(TOKEN).build()
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("predict", predict)],
+        states={step: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input)]
+                for step in STEPS},
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_user=True, per_chat=True
+    )
 
-# So‘zlashuv handler
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("predict", predict)],
-    states={i: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input)] for i in range(len(FIELDS))},
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(conv)
 
-# Handlerlarni qo‘shish
-app.add_handler(CommandHandler("start", start))
-app.add_handler(conv_handler)
-
-# Botni ishga tushurish
-if __name__ == "__main__":
     print("Bot ishga tushdi...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
