@@ -1,0 +1,1 @@
+# Mijozlarni-qolish-yoki-ketishi
